@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR-Queue Lite - Staff Control</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>👨‍🍳 Staff Control Panel</h1>
+            <p class="subtitle">Manage the queue</p>
+        </div>
+
+        <div class="card status-card">
+            <div class="status-grid">
+                <div class="status-box current">
+                    <div class="status-label">Currently Serving</div>
+                    <div class="status-number" id="staffCurrentToken">0</div>
+                </div>
+                <div class="status-box next">
+                    <div class="status-label">Next Token</div>
+                    <div class="status-number" id="staffNextToken">1</div>
+                </div>
+            </div>
+
+            <div class="queue-info">
+                <div class="info-row">
+                    <span>People in Queue:</span>
+                    <strong id="queueLength">0</strong>
+                </div>
+                <div class="info-row">
+                    <span>Tokens Issued Today:</span>
+                    <strong id="tokensIssued">0</strong>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <button class="btn btn-next btn-large" id="nextBtn" onclick="nextToken()">
+                ⏭️ CALL NEXT TOKEN
+            </button>
+            <p class="hint">Click to advance to the next person in queue</p>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="card actions-card">
+            <h3>Quick Actions</h3>
+            <div class="action-buttons">
+                <a href="/display" class="btn btn-secondary" target="_blank">
+                    📺 View Display
+                </a>
+                <a href="/get" class="btn btn-secondary">
+                    🎫 Get Token
+                </a>
+                <button class="btn btn-danger" onclick="confirmReset()">
+                    🔄 Reset Queue
+                </button>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="connection-indicator" id="connectionIndicator">
+                <span class="indicator-dot"></span> Connected
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let reconnectInterval;
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                updateConnectionIndicator(true);
+                clearInterval(reconnectInterval);
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data);
+
+                if (data.type === 'token_update') {
+                    updateStatus(data);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionIndicator(false);
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket closed');
+                updateConnectionIndicator(false);
+                reconnectInterval = setInterval(connectWebSocket, 3000);
+            };
+        }
+
+        // Update status display
+        function updateStatus(data) {
+            document.getElementById('staffCurrentToken').textContent = data.current_token;
+            document.getElementById('staffNextToken').textContent = data.next_token;
+
+            const queueLength = data.next_token - data.current_token - 1;
+            document.getElementById('queueLength').textContent = queueLength > 0 ? queueLength : 0;
+            document.getElementById('tokensIssued').textContent = data.next_token - 1;
+        }
+
+        // Call next token
+        function nextToken() {
+            const btn = document.getElementById('nextBtn');
+            btn.disabled = true;
+            btn.classList.add('btn-loading');
+
+            fetch('/api/next_token', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                showMessage('✓ Token advanced successfully!', 'success');
+                btn.disabled = false;
+                btn.classList.remove('btn-loading');
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('✗ Error advancing token', 'error');
+                btn.disabled = false;
+                btn.classList.remove('btn-loading');
+            });
+        }
+
+        // Show message
+        function showMessage(text, type) {
+            const msgEl = document.getElementById('message');
+            msgEl.textContent = text;
+            msgEl.className = 'message message-' + type;
+            msgEl.style.display = 'block';
+
+            setTimeout(() => {
+                msgEl.style.display = 'none';
+            }, 3000);
+        }
+
+        // Update connection indicator
+        function updateConnectionIndicator(connected) {
+            const indicator = document.getElementById('connectionIndicator');
+            if (connected) {
+                indicator.innerHTML = '<span class="indicator-dot connected"></span> Connected';
+            } else {
+                indicator.innerHTML = '<span class="indicator-dot disconnected"></span> Disconnected';
+            }
+        }
+
+        // Confirm reset
+        function confirmReset() {
+            if (confirm('Are you sure you want to reset the queue? This will set all tokens back to 0.')) {
+                alert('Reset functionality would be implemented here.\nFor safety, this is disabled in the demo.');
+            }
+        }
+
+        // Refresh status periodically
+        function refreshStatus() {
+            fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                updateStatus({
+                    type: 'token_update',
+                    current_token: data.current_token,
+                    next_token: data.next_token
+                });
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        // Initialize
+        connectWebSocket();
+        setInterval(refreshStatus, 5000);
+
+        // Keyboard shortcut: Space bar to advance
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'Space' && event.target === document.body) {
+                event.preventDefault();
+                nextToken();
+            }
+        });
+    </script>
+</body>
+</html>

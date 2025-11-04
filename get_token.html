@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR-Queue Lite - Get Token</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🍽️ Canteen Queue</h1>
+            <p class="subtitle">Get your token to join the queue</p>
+        </div>
+
+        <div class="card">
+            <button class="btn btn-primary btn-large" id="getTokenBtn" onclick="getToken()">
+                Get My Token
+            </button>
+        </div>
+
+        <div id="tokenResult" class="card" style="display:none;">
+            <div class="token-display">
+                <div class="token-label">Your Token Number</div>
+                <div class="token-number" id="tokenNumber">-</div>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Current Serving:</span>
+                    <span class="info-value" id="currentToken">0</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Your Position:</span>
+                    <span class="info-value" id="position">0</span>
+                </div>
+            </div>
+
+            <a href="/display" class="btn btn-secondary">
+                📺 View Live Display
+            </a>
+        </div>
+
+        <div class="footer">
+            <a href="/staff" class="link">Staff Panel</a> | 
+            <a href="/display" class="link">Display Board</a>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let myToken = null;
+
+        // Connect to WebSocket for real-time updates
+        function connectWebSocket() {
+            ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.type === 'token_update' && myToken !== null) {
+                    updateStatus(data.current_token);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket closed, reconnecting...');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        // Get new token
+        function getToken() {
+            const btn = document.getElementById('getTokenBtn');
+            btn.disabled = true;
+            btn.textContent = 'Getting Token...';
+
+            fetch('/api/get_token', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}
+            })
+            .then(response => response.json())
+            .then(data => {
+                myToken = data.token;
+                document.getElementById('tokenNumber').textContent = data.token;
+                document.getElementById('currentToken').textContent = data.current_token;
+                document.getElementById('position').textContent = data.position;
+                document.getElementById('tokenResult').style.display = 'block';
+
+                // Connect to WebSocket for live updates
+                connectWebSocket();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to get token. Please try again.');
+                btn.disabled = false;
+                btn.textContent = 'Get My Token';
+            });
+        }
+
+        // Update status with current token
+        function updateStatus(currentToken) {
+            document.getElementById('currentToken').textContent = currentToken;
+            const position = myToken - currentToken;
+            document.getElementById('position').textContent = position > 0 ? position : 0;
+
+            // Highlight if it's your turn
+            if (myToken === currentToken) {
+                document.querySelector('.token-display').style.background = '#4CAF50';
+                document.querySelector('.token-display').style.animation = 'pulse 1s infinite';
+                alert('🎉 It\'s your turn! Please proceed to the counter.');
+            }
+        }
+    </script>
+</body>
+</html>

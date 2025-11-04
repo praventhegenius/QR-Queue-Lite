@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR-Queue Lite - Live Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .display-container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 40px;
+        }
+
+        .title {
+            font-size: 48px;
+            margin-bottom: 20px;
+            color: #FFA726;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+        }
+
+        .status-label {
+            font-size: 36px;
+            color: #81C784;
+            margin: 30px 0;
+            letter-spacing: 2px;
+        }
+
+        .current-token-display {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+            border-radius: 20px;
+            padding: 60px;
+            margin: 40px 0;
+            box-shadow: 0 10px 40px rgba(76, 175, 80, 0.4);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .current-token {
+            font-size: 180px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 4px 4px 8px rgba(0,0,0,0.3);
+            line-height: 1;
+        }
+
+        .next-info {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+            font-size: 32px;
+            color: #FFD54F;
+        }
+
+        .next-token {
+            font-size: 48px;
+            font-weight: bold;
+            color: #FFA726;
+            margin-left: 15px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 40px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 20px 40px;
+            margin: 10px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .stat-label {
+            font-size: 18px;
+            color: #B0BEC5;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            color: #64B5F6;
+        }
+
+        .timestamp {
+            font-size: 18px;
+            color: #78909C;
+            margin-top: 30px;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .connected {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .disconnected {
+            background: #F44336;
+            color: white;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+
+        @keyframes blink {
+            0%, 50%, 100% { opacity: 1; }
+            25%, 75% { opacity: 0.5; }
+        }
+
+        .qr-info {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            color: #B0BEC5;
+        }
+    </style>
+</head>
+<body>
+    <div class="display-container">
+        <h1 class="title">🍽️ Canteen Queue - Live Status</h1>
+
+        <div class="status-label">NOW SERVING</div>
+
+        <div class="current-token-display">
+            <div class="current-token" id="currentToken">0</div>
+        </div>
+
+        <div class="next-info">
+            Next Token: <span class="next-token" id="nextToken">1</span>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-label">People in Queue</div>
+                <div class="stat-value" id="queueLength">0</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">Tokens Issued</div>
+                <div class="stat-value" id="tokensIssued">0</div>
+            </div>
+        </div>
+
+        <div class="timestamp">
+            Last Updated: <span id="timestamp">--:--:--</span>
+        </div>
+    </div>
+
+    <div class="connection-status connected" id="connectionStatus">
+        ● CONNECTED
+    </div>
+
+    <div class="qr-info">
+        Scan QR → http://192.168.4.1/get
+    </div>
+
+    <script>
+        let ws;
+        let reconnectInterval;
+
+        function connectWebSocket() {
+            ws = new WebSocket('ws://' + window.location.hostname + '/ws');
+
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+                clearInterval(reconnectInterval);
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                console.log('Received:', data);
+
+                if (data.type === 'token_update') {
+                    updateDisplay(data);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket closed');
+                updateConnectionStatus(false);
+                reconnectInterval = setInterval(connectWebSocket, 3000);
+            };
+        }
+
+        function updateDisplay(data) {
+            document.getElementById('currentToken').textContent = data.current_token;
+            document.getElementById('nextToken').textContent = data.next_token;
+
+            const queueLength = data.next_token - data.current_token - 1;
+            document.getElementById('queueLength').textContent = queueLength > 0 ? queueLength : 0;
+            document.getElementById('tokensIssued').textContent = data.next_token - 1;
+
+            const now = new Date();
+            document.getElementById('timestamp').textContent = now.toLocaleTimeString();
+        }
+
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (connected) {
+                statusEl.className = 'connection-status connected';
+                statusEl.textContent = '● CONNECTED';
+            } else {
+                statusEl.className = 'connection-status disconnected';
+                statusEl.textContent = '● DISCONNECTED';
+            }
+        }
+
+        // Fallback: Poll status every 5 seconds
+        function pollStatus() {
+            fetch('/api/status')
+            .then(response => response.json())
+            .then(data => {
+                updateDisplay({
+                    type: 'token_update',
+                    current_token: data.current_token,
+                    next_token: data.next_token
+                });
+            })
+            .catch(error => console.error('Polling error:', error));
+        }
+
+        // Initialize
+        connectWebSocket();
+        setInterval(pollStatus, 5000);
+    </script>
+</body>
+</html>
